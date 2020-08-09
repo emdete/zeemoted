@@ -509,6 +509,7 @@ int main(int argc, char **argv) {
 											for (i=0;i<sizeof(data.buttons);i++)
 												if (data.buttons[i] != ZEEMOTE_BUTTON_NONE)
 													button_state |= 1<<data.buttons[i];
+											printf("Button %x -> %x\n", old_button_state, button_state);
 											for (i=0;i<4;i++)
 												if ((button_state & (1<<i)) != (old_button_state & (1<<i)))
 													switch (kbd_mode) {
