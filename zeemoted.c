@@ -74,28 +74,6 @@ static int do_uinput_fakekey(int fd, unsigned short key, int pressed) {
 /********************** linux uinput ***************************/
 #include <linux/uinput.h>
 
-static int init_uinput() {
-	int fd = open("/dev/input/uinput", O_RDWR);
-	struct uinput_user_dev dev;
-	if (fd < 0) {
-		fd = open("/dev/uinput", O_RDWR);
-		if (fd < 0) {
-			printf("Unable to open uinput device.\n"
-				"Perhaps 'modprobe uinput' required?\n");
-			return fd;
-		}
-	}
-	memset(&dev,0,sizeof(dev));
-	strncpy(dev.name, "Zeemote", UINPUT_MAX_NAME_SIZE);
-	dev.id.bustype = BUS_BLUETOOTH;
-	dev.id.version = 0x01;
-	if (write(fd, &dev, sizeof(dev)) < sizeof(dev)) {
-		printf("Registering device at uinput failed\n");
-		return -1;
-	}
-	return fd;
-}
-
 /* Create uinput output */
 static int do_uinput(int fd, unsigned short key, int pressed, unsigned short event_type) {
 	struct input_event event;
@@ -122,18 +100,36 @@ static int keys[] = {
 	0 };
 
 static int init_uinput_keyboard() {
-	int fd = init_uinput();
-	int i = 0;
+	char* state = "init";
+	struct uinput_setup usetup;
+	int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+	state = "open";
+	if (fd < 0)
+		goto ERROR;
+	state = "UI_SET_EVBIT";
 	if (ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0)
-		perror("setting EV_KEY");
-	while (keys[i]) {
-		if (ioctl(fd, UI_SET_KEYBIT, keys[i]) < 0)
-			fprintf(stderr, "setting key %d: %s\n", keys[i], strerror(errno));
-		i++;
-	}
+		goto ERROR;
+	state = "UI_SET_KEYBIT";
+	if (ioctl(fd, UI_SET_KEYBIT, KEY_SPACE) < 0)
+		goto ERROR;
+	memset(&usetup, 0, sizeof(usetup));
+	usetup.id.bustype = BUS_VIRTUAL;
+	usetup.id.vendor = 0x1234; /* sample vendor */
+	usetup.id.product = 0x5678; /* sample product */
+	strcpy(usetup.name, "Zeemote");
+	state = "UI_DEV_SETUP";
+	if (ioctl(fd, UI_DEV_SETUP, &usetup) < 0)
+		goto ERROR;
+	state = "UI_DEV_CREATE";
 	if (ioctl(fd, UI_DEV_CREATE) < 0)
-		perror("Create device");
+		goto ERROR;
 	return fd;
+ERROR:
+	perror("opening/controling uinput");
+	fprintf(stderr, "Error while %s\n", state);
+	if (fd>=0)
+		close(fd);
+	return -1;
 }
 
 /********************** linux joystick *************************/
@@ -145,7 +141,7 @@ static int init_uinput_joystick() {
 		goto ERROR;
 	struct uinput_setup usetup;
 	memset(&usetup, 0, sizeof(usetup));
-	usetup.id.bustype = BUS_USB;
+	usetup.id.bustype = BUS_VIRTUAL;
 	usetup.id.vendor = 0x1234; /* sample vendor */
 	usetup.id.product = 0x5678; /* sample product */
 	strcpy(usetup.name, "Zeemote");
@@ -185,6 +181,7 @@ ERROR:
 	fprintf(stderr, "Error while %s\n", state);
 	if (fd>=0)
 		close(fd);
+	return -1;
 }
 
 /********************** bluetooth ******************************/
