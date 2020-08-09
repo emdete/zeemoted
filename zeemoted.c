@@ -138,16 +138,53 @@ static int init_uinput_keyboard() {
 
 /********************** linux joystick *************************/
 static int init_uinput_joystick() {
-	int fd = init_uinput();
-	if (ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0) perror("setting EV_ABS");
-	if (ioctl(fd, UI_SET_ABSBIT, ABS_X) < 0) perror("setting ABS_X");
-	if (ioctl(fd, UI_SET_ABSBIT, ABS_Y) < 0) perror("setting ABS_Y");
-	if (ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) perror("setting EV_KEY");
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_0) < 0) perror("setting BTN_0");
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_1) < 0) perror("setting BTN_1");
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_2) < 0) perror("setting BTN_2");
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_3) < 0) perror("setting BTN_3");
+	char* state = "init";
+	int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+	state = "open";
+	if (fd < 0)
+		goto ERROR;
+	struct uinput_setup usetup;
+	memset(&usetup, 0, sizeof(usetup));
+	usetup.id.bustype = BUS_USB;
+	usetup.id.vendor = 0x1234; /* sample vendor */
+	usetup.id.product = 0x5678; /* sample product */
+	strcpy(usetup.name, "Zeemote");
+	state = "UI_DEV_SETUP";
+	if (ioctl(fd, UI_DEV_SETUP, &usetup) < 0)
+		goto ERROR;
+	state = "UI_SET_EVBIT EV_ABS";
+	if (ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0)
+		goto ERROR;
+	state = "UI_SET_ABSBIT ABS_X";
+	if (ioctl(fd, UI_SET_ABSBIT, ABS_X) < 0)
+		goto ERROR;
+	state = "UI_SET_ABSBIT ABS_Y";
+	if (ioctl(fd, UI_SET_ABSBIT, ABS_Y) < 0)
+		goto ERROR;
+	state = "UI_SET_EVBIT EV_KEY";
+	if (ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0)
+		goto ERROR;
+	state = "UI_SET_KEYBIT BTN_0";
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_0) < 0)
+		goto ERROR;
+	state = "UI_SET_KEYBIT BTN_1";
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_1) < 0)
+		goto ERROR;
+	state = "UI_SET_KEYBIT BTN_2";
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_2) < 0)
+		goto ERROR;
+	state = "UI_SET_KEYBIT BTN_3";
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_3) < 0)
+		goto ERROR;
+	state = "UI_DEV_CREATE";
+	if (ioctl(fd, UI_DEV_CREATE) < 0)
+		goto ERROR;
 	return fd;
+ERROR:
+	perror("opening/controling uinput");
+	fprintf(stderr, "Error while %s\n", state);
+	if (fd>=0)
+		close(fd);
 }
 
 /********************** bluetooth ******************************/
@@ -272,7 +309,7 @@ int main(int argc, char **argv) {
 	out_types kbd_mode = mode_joystick;
 	int c;
 	int sensitivity = 64;
-	int bounce = 0;
+	//int bounce = 0;
 	/* parse options */
 	opterr = 0;
 	while ((c = getopt(argc, argv, "vjkxas:b:c:h")) != -1) {
@@ -312,9 +349,9 @@ int main(int argc, char **argv) {
 			}
 			printf("sensitivity switched to %d\n", sensitivity);
 		break;
-		case 'b':
-			bounce = atoi(optarg);
-		break;
+		//case 'b':
+			//bounce = atoi(optarg);
+		//break;
 		case 'c': {
 			int index, code;
 			if ((sscanf(optarg, "%d:%d\n", &index, &code) == 2) && index >= 0 && index <= 7)
@@ -356,6 +393,7 @@ int main(int argc, char **argv) {
 	while (bacmp(bdaddr, BDADDR_ANY)) {
 		char addr[18];
 		ba2str(bdaddr, addr);
+		printf("Zeemote JS1 device %s\n", addr);
 		// open bluetooth rfcomm
 		if ((bt = bluez_connect(bdaddr, 1)) >= 0) {
 			int fd = -1;
@@ -364,8 +402,12 @@ int main(int argc, char **argv) {
 				case mode_keyboard: fd = init_uinput_keyboard(); break;
 				case mode_fakekey: fd = init_fakekey(); break;
 			}
-			printf("Zeemote JS1 device %s connected for use as %s.\n", addr,
-				kbd_mode==mode_keyboard?"keyboard":(kbd_mode==mode_joystick?"joystick":"fakekey"));
+			if (fd < 0)
+				goto ERROR;
+			printf("Zeemote JS1 device %s connected for use as %s.\n",
+				addr,
+				kbd_mode==mode_keyboard?"keyboard":(kbd_mode==mode_joystick?"joystick":"fakekey")
+				);
 			pid_t pid = fork();
 			if (pid < 0) {
 				perror("fork() failed");
@@ -515,6 +557,7 @@ int main(int argc, char **argv) {
 	}
 	int status = 0;
 	wait(&status);
+ERROR:
 	printf("zeemoted terminated %d\n", status);
 	return 0;
 }

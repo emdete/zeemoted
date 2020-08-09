@@ -27,7 +27,7 @@ install: zeemoted
 	install zeemoted $(DESTDIR)/usr/bin
 
 run: zeemoted
-	./zeemoted -x
+	./zeemoted -j 00:1C:4D:00:8F:08
 
 clean:
 	rm -f zeemoted *~ *.bak
