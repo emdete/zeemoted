@@ -46,6 +46,7 @@ typedef enum out_types {
 #include <fakekey/fakekey.h>
 
 #define LOG(...) do{fprintf(stderr,__VA_ARGS__);fflush(stderr);}while(0)
+#define countof(s) (sizeof(s)/sizeof(*s))
 
 static int fakekey_keys[] = {
 	XK_Left, // js
@@ -139,7 +140,15 @@ ERROR:
 }
 
 /********************** linux joystick *************************/
+static int joystick_buttons[] = {
+	BTN_TRIGGER,
+	BTN_THUMB,
+	BTN_THUMB2,
+	BTN_TOP,
+	};
+
 static int init_uinput_joystick() {
+	int i;
 	char* state = "init";
 	int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
 	state = "open";
@@ -166,18 +175,11 @@ static int init_uinput_joystick() {
 	state = "UI_SET_EVBIT EV_KEY";
 	if (ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0)
 		goto ERROR;
-	state = "UI_SET_KEYBIT BTN_JOYSTICK + 0";
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_JOYSTICK + 0) < 0)
-		goto ERROR;
-	state = "UI_SET_KEYBIT BTN_JOYSTICK + 1";
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_JOYSTICK + 1) < 0)
-		goto ERROR;
-	state = "UI_SET_KEYBIT BTN_JOYSTICK + 2";
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_JOYSTICK + 2) < 0)
-		goto ERROR;
-	state = "UI_SET_KEYBIT BTN_JOYSTICK + 3";
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_JOYSTICK + 3) < 0)
-		goto ERROR;
+	for (i=0;i<countof(joystick_buttons);i++) {
+		state = "UI_SET_KEYBIT BTN_JOYSTICK";
+		if (ioctl(fd, UI_SET_KEYBIT, joystick_buttons[i]) < 0)
+			goto ERROR;
+	}
 	state = "UI_DEV_CREATE";
 	if (ioctl(fd, UI_DEV_CREATE) < 0)
 		goto ERROR;
@@ -521,7 +523,7 @@ int main(int argc, char **argv) {
 												if ((button_state & (1<<i)) != (old_button_state & (1<<i)))
 													switch (kbd_mode) {
 														case mode_joystick:
-															do_uinput(fd, BTN_JOYSTICK + i, (button_state & (1<<i))?1:0, EV_KEY);
+															do_uinput(fd, joystick_buttons[i], (button_state & (1<<i))?1:0, EV_KEY);
 														break;
 														case mode_keyboard:
 															do_uinput(fd, keys[4+i], (button_state & (1<<i))?1:0, EV_KEY);
