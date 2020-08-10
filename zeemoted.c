@@ -45,6 +45,8 @@ typedef enum out_types {
 #include <X11/XF86keysym.h>
 #include <fakekey/fakekey.h>
 
+#define LOG(...) do{fprintf(stderr,__VA_ARGS__);fflush(stderr);}while(0)
+
 static int fakekey_keys[] = {
 	XK_Left, // js
 	XK_Right, // js
@@ -84,6 +86,10 @@ static int do_uinput(int fd, unsigned short key, int pressed, unsigned short eve
 	event.value = pressed;
 	if (write(fd,&event,sizeof(event)) != sizeof(event))
 		perror("Writing event");
+	memset(&event, 0 , sizeof(event));
+	event.type = EV_SYN;
+	if (write(fd,&event,sizeof(event)) != sizeof(event))
+		perror("Writing event sync");
 	return pressed? key: 0;
 }
 
@@ -126,7 +132,7 @@ static int init_uinput_keyboard() {
 	return fd;
 ERROR:
 	perror("opening/controling uinput");
-	fprintf(stderr, "Error while %s\n", state);
+	LOG("Error while %s\n", state);
 	if (fd>=0)
 		close(fd);
 	return -1;
@@ -160,17 +166,17 @@ static int init_uinput_joystick() {
 	state = "UI_SET_EVBIT EV_KEY";
 	if (ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0)
 		goto ERROR;
-	state = "UI_SET_KEYBIT BTN_0";
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_0) < 0)
+	state = "UI_SET_KEYBIT BTN_JOYSTICK + 0";
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_JOYSTICK + 0) < 0)
 		goto ERROR;
-	state = "UI_SET_KEYBIT BTN_1";
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_1) < 0)
+	state = "UI_SET_KEYBIT BTN_JOYSTICK + 1";
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_JOYSTICK + 1) < 0)
 		goto ERROR;
-	state = "UI_SET_KEYBIT BTN_2";
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_2) < 0)
+	state = "UI_SET_KEYBIT BTN_JOYSTICK + 2";
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_JOYSTICK + 2) < 0)
 		goto ERROR;
-	state = "UI_SET_KEYBIT BTN_3";
-	if (ioctl(fd, UI_SET_KEYBIT, BTN_3) < 0)
+	state = "UI_SET_KEYBIT BTN_JOYSTICK + 3";
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_JOYSTICK + 3) < 0)
 		goto ERROR;
 	state = "UI_DEV_CREATE";
 	if (ioctl(fd, UI_DEV_CREATE) < 0)
@@ -178,7 +184,7 @@ static int init_uinput_joystick() {
 	return fd;
 ERROR:
 	perror("opening/controling uinput");
-	fprintf(stderr, "Error while %s\n", state);
+	LOG("Error while %s\n", state);
 	if (fd>=0)
 		close(fd);
 	return -1;
@@ -195,7 +201,7 @@ static int bluez_connect(bdaddr_t *bdaddr, int channel) {
 	struct sockaddr_rc rem_addr;
 	/* bluez connects to BlueClient */
 	if (bt < 0) {
-		fprintf(stderr, "Can't create socket. %s(%d)\n", strerror(errno), errno);
+		LOG("Can't create socket. %s(%d)\n", strerror(errno), errno);
 		return bt;
 	}
 	/* connect on rfcomm */
@@ -204,7 +210,7 @@ static int bluez_connect(bdaddr_t *bdaddr, int channel) {
 	rem_addr.rc_bdaddr = *bdaddr;
 	rem_addr.rc_channel = channel;
 	if (connect(bt, (struct sockaddr *)&rem_addr, sizeof(rem_addr)) < 0 ) {
-		fprintf(stderr, "Can't connect. %s(%d)\n", strerror(errno), errno);
+		LOG("Can't connect. %s(%d)\n", strerror(errno), errno);
 		close(bt);
 		return -1;
 	}
@@ -246,7 +252,7 @@ static bdaddr_t* inquiry() {
 		&& (info+i)->dev_class[2] == ((ZEEMOTE_CLASS >> 16) & 0xff))
 			mote++;
 	if (!mote) {
-		printf("No Zeemotes found\n");
+		LOG("No Zeemotes found\n");
 		return result;
 	}
 	result = malloc(sizeof(bdaddr_t) * (mote + 1));
@@ -263,7 +269,7 @@ static bdaddr_t* inquiry() {
 
 /********************** main program ***************************/
 static void usage(void) {
-	printf("\n"
+	LOG("\n"
 		"Usage:\n"
 		"\n"
 		"\tzeemoted [OPTIONS] [DEVICE ADDRESS]\n"
@@ -312,19 +318,19 @@ int main(int argc, char **argv) {
 	while ((c = getopt(argc, argv, "vjkxas:b:c:h")) != -1) {
 		switch (c) {
 		case 'v':
-			printf("zeemoted V" VERSION " - " "(c) 2009-2010 by Till Harbaum <till@harbaum.org>\n");
+			LOG("zeemoted V" VERSION " - " "(c) 2009-2010 by Till Harbaum <till@harbaum.org>\n");
 		break;
 		case 'j':
 			kbd_mode = mode_joystick;
-			printf("joystick mode enabled\n");
+			LOG("joystick mode enabled\n");
 		break;
 		case 'k':
 			kbd_mode = mode_keyboard;
-			printf("keyboard mode enabled\n");
+			LOG("keyboard mode enabled\n");
 		break;
 		case 'x':
 			kbd_mode = mode_fakekey;
-			printf("fakekey mode enabled\n");
+			LOG("fakekey mode enabled\n");
 		break;
 		case 'a': {
 			fakekey_keys[0] = XK_Page_Up;
@@ -335,16 +341,16 @@ int main(int argc, char **argv) {
 			keys[1] = KEY_PAGEDOWN;
 			keys[2] = KEY_VOLUMEDOWN;
 			keys[3] = KEY_VOLUMEUP;
-			printf("audio key-map enabled\n");
+			LOG("audio key-map enabled\n");
 		}
 		break;
 		case 's':
 			sensitivity = atoi(optarg);
 			if (sensitivity < 1 || sensitivity > 126) {
-				printf("Sensivity out of bounds! Must be between 1 and 126\n");
+				LOG("Sensivity out of bounds! Must be between 1 and 126\n");
 				sensitivity = 64;
 			}
-			printf("sensitivity switched to %d\n", sensitivity);
+			LOG("sensitivity switched to %d\n", sensitivity);
 		break;
 		//case 'b':
 			//bounce = atoi(optarg);
@@ -355,16 +361,16 @@ int main(int argc, char **argv) {
 				keys[index] = code;
 			else
 				usage();
-			printf("key %d set to %d\n", index, code);
+			LOG("key %d set to %d\n", index, code);
 			}
 		break;
 		case '?':
 			if (optopt == 's')
-				fprintf (stderr, "Option -%c requires an argument.\n", optopt);
+				LOG("Option -%c requires an argument.\n", optopt);
 			else if (isprint(optopt))
-				fprintf(stderr, "Unknown option `-%c'.\n", optopt);
+				LOG("Unknown option `-%c'.\n", optopt);
 			else
-				fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
+				LOG("Unknown option character `\\x%x'.\n", optopt);
 		case 'h':
 		default:
 			usage();
@@ -372,10 +378,10 @@ int main(int argc, char **argv) {
 		}
 	}
 	if (optind == argc) {
-		printf("No device addresses given, trying to autodetect devices ...\n");
+		LOG("No device addresses given, trying to autodetect devices ...\n");
 		bdaddr = inquiry();
 		if (!bdaddr) {
-			printf("No devices found\n");
+			LOG("No devices found\n");
 			exit(0);
 		}
 	}
@@ -390,7 +396,7 @@ int main(int argc, char **argv) {
 	while (bacmp(bdaddr, BDADDR_ANY)) {
 		char addr[18];
 		ba2str(bdaddr, addr);
-		printf("Zeemote JS1 device %s\n", addr);
+		LOG("Zeemote JS1 device %s\n", addr);
 		// open bluetooth rfcomm
 		if ((bt = bluez_connect(bdaddr, 1)) >= 0) {
 			int fd = -1;
@@ -401,7 +407,7 @@ int main(int argc, char **argv) {
 			}
 			if (fd < 0)
 				goto ERROR;
-			printf("Zeemote JS1 device %s connected for use as %s.\n",
+			LOG("Zeemote JS1 device %s connected for use as %s.\n",
 				addr,
 				kbd_mode==mode_keyboard?"keyboard":(kbd_mode==mode_joystick?"joystick":"fakekey")
 				);
@@ -425,9 +431,10 @@ int main(int argc, char **argv) {
 									if (hdr.length-2 == sizeof(data.axis)) {
 										if (read_num(bt, data.axis, sizeof(data.axis))) {
 											if (data.axis[ZEEMOTE_AXIS_UNKNOWN])
-												printf("WARNING: ZEEMOTE_STICK axis UNKNOWN != 0!\n");
+												LOG("WARNING: ZEEMOTE_STICK axis UNKNOWN != 0!\n");
 											int x_state = data.axis[ZEEMOTE_AXIS_X];
 											int y_state = data.axis[ZEEMOTE_AXIS_Y];
+											LOG("x/y_state %d %d\n", x_state, y_state);
 											switch (kbd_mode) {
 												case mode_joystick: {
 													if (x_state != old_x_state) {
@@ -481,10 +488,10 @@ int main(int argc, char **argv) {
 											}
 										}
 										else
-											printf("ERROR: reading ZEEMOTE_STICK payload failed\n");
+											LOG("ERROR: reading ZEEMOTE_STICK payload failed\n");
 									}
 									else {
-										printf("ERROR: unexpected length %d in ZEEMOTE_STICK\n", hdr.length);
+										LOG("ERROR: unexpected length %d in ZEEMOTE_STICK\n", hdr.length);
 										read_num(bt, data.dummy, hdr.length - 2);
 									}
 								}
@@ -492,11 +499,11 @@ int main(int argc, char **argv) {
 								case ZEEMOTE_BATTERY: {
 									if (hdr.length-2 == sizeof(data.voltage))
 										if (read_num(bt, &data.voltage, sizeof(data.voltage)))
-											printf("ZEEMOTE_BATTERY: %d.%03u volts\n", ztohs(data.voltage)/1000, ztohs(data.voltage)%1000);
+											LOG("ZEEMOTE_BATTERY: %d.%03u volts\n", ztohs(data.voltage)/1000, ztohs(data.voltage)%1000);
 										else
-											printf("ERROR: reading ZEEMOTE_BATTERY payload failed\n");
+											LOG("ERROR: reading ZEEMOTE_BATTERY payload failed\n");
 									else {
-										printf("ERROR: unexpected length %d in ZEEMOTE_BATTERY\n", hdr.length);
+										LOG("ERROR: unexpected length %d in ZEEMOTE_BATTERY\n", hdr.length);
 										read_num(bt, data.dummy, hdr.length - 2);
 									}
 								}
@@ -509,15 +516,15 @@ int main(int argc, char **argv) {
 											for (i=0;i<sizeof(data.buttons);i++)
 												if (data.buttons[i] != ZEEMOTE_BUTTON_NONE)
 													button_state |= 1<<data.buttons[i];
-											printf("Button %x -> %x\n", old_button_state, button_state);
+											LOG("Button %x -> %x\n", old_button_state, button_state);
 											for (i=0;i<4;i++)
 												if ((button_state & (1<<i)) != (old_button_state & (1<<i)))
 													switch (kbd_mode) {
+														case mode_joystick:
+															do_uinput(fd, BTN_JOYSTICK + i, (button_state & (1<<i))?1:0, EV_KEY);
+														break;
 														case mode_keyboard:
 															do_uinput(fd, keys[4+i], (button_state & (1<<i))?1:0, EV_KEY);
-														break;
-														case mode_joystick:
-															do_uinput(fd, BTN_0+i, (button_state & (1<<i))?1:0, EV_KEY);
 														break;
 														case mode_fakekey:
 															do_uinput_fakekey(fd, 4+i, (button_state & (1<<i))?1:0);
@@ -526,17 +533,17 @@ int main(int argc, char **argv) {
 											old_button_state = button_state;
 										}
 										else
-											printf("ERROR: reading ZEEMOTE_BUTTONS payload failed\n");
+											LOG("ERROR: reading ZEEMOTE_BUTTONS payload failed\n");
 									}
 									else {
-										printf("ERROR: unexpected length %d in ZEEMOTE_BUTTONS\n", hdr.length);
+										LOG("ERROR: unexpected length %d in ZEEMOTE_BUTTONS\n", hdr.length);
 										read_num(bt, data.dummy, hdr.length - 2);
 									}
 								break;
 								}
 								default: {
 									if (hdr.length - 2 > sizeof(data.dummy))
-										printf("%d bytes of unknown command %d exceeding limits\n", hdr.length-2, hdr.type);
+										LOG("%d bytes of unknown command %d exceeding limits\n", hdr.length-2, hdr.type);
 									read_num(bt, data.dummy, hdr.length - 2);
 								break;
 								}
@@ -550,12 +557,12 @@ int main(int argc, char **argv) {
 			}
 		}
 		else
-			printf("connection to %s failed\n", addr);
+			LOG("connection to %s failed\n", addr);
 		bdaddr++;
 	}
 	int status = 0;
 	wait(&status);
 ERROR:
-	printf("zeemoted terminated %d\n", status);
+	LOG("zeemoted terminated %d\n", status);
 	return 0;
 }
